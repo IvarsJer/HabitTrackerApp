@@ -3,6 +3,10 @@ from tkinter import ttk
 from PIL import Image, ImageTk
 from user_profile import UserProfile
 from tkinter import filedialog
+import json
+import os
+from datetime import datetime
+
 
 class HabitTrackerApp:
     def __init__(self, root):
@@ -12,6 +16,7 @@ class HabitTrackerApp:
 
         # Initialize user profile
         self.user_profile = UserProfile()
+        self.data_file = "habit_tracker_data.json"
 
         # Top Frame for Profile Info
         self.profile_frame = ttk.Frame(self.root, padding=(10, 10))
@@ -55,19 +60,18 @@ class HabitTrackerApp:
         self.habit_label = ttk.Label(self.habit_frame, text="Daily Habits", font=("Arial", 16))
         self.habit_label.pack(anchor="w")
 
-        self.habit_list = ttk.Treeview(self.habit_frame, columns=("Status"), show="headings")
+        self.habit_list = ttk.Treeview(
+            self.habit_frame, columns=("Habit", "Status", "EXP", "Streak"), show="headings"
+        )
+        self.habit_list.heading("Habit", text="Habit")
         self.habit_list.heading("Status", text="Status")
+        self.habit_list.heading("EXP", text="EXP Value")
+        self.habit_list.heading("Streak", text="Streak")
+        self.habit_list.column("Habit", width=200)
+        self.habit_list.column("Status", width=150)
+        self.habit_list.column("EXP", width=100)
+        self.habit_list.column("Streak", width=100)
         self.habit_list.pack(fill=tk.BOTH, expand=True)
-
-        # Sample Habits
-        self.sample_habits = [
-            ("Workout", "Not Completed"),
-            ("Read a Book", "Not Completed"),
-            ("Play Guitar", "Not Completed"),
-            ("Code/Program", "Not Completed")
-        ]
-        for habit in self.sample_habits:
-            self.habit_list.insert("", tk.END, values=habit)
 
         # Bottom Frame for Buttons
         self.button_frame = ttk.Frame(self.root, padding=(10, 10))
@@ -88,83 +92,141 @@ class HabitTrackerApp:
         )
         self.remove_habit_button.pack(side=tk.LEFT, padx=5)
 
+        # Load Data
+        self.load_data()
+        self.root.protocol("WM_DELETE_WINDOW", self.on_exit)
+
+    def edit_profile(self):
+        edit_window = tk.Toplevel(self.root)
+        edit_window.title("Edit Profile")
+
+        tk.Label(edit_window, text="Edit Username:").pack(pady=5)
+        username_entry = ttk.Entry(edit_window)
+        username_entry.insert(0, self.user_profile.username)
+        username_entry.pack(pady=5)
+
+        def save_profile():
+            new_username = username_entry.get().strip()
+            if new_username:
+                self.user_profile.username = new_username
+                self.username_label.config(text=f"Username: {new_username}")
+            edit_window.destroy()
+
+        save_button = ttk.Button(edit_window, text="Save", command=save_profile)
+        save_button.pack(pady=10)
+
     def complete_task(self):
         selected_item = self.habit_list.selection()
         if selected_item:
             current_values = self.habit_list.item(selected_item, "values")
             if current_values[1] != "Completed":
-                # Mark task as completed
-                self.habit_list.item(selected_item, values=(current_values[0], "Completed"))
+                new_streak = int(current_values[3]) + 1
+                self.habit_list.item(
+                    selected_item,
+                    values=(current_values[0], "Completed", current_values[2], new_streak),
+                )
 
-                # Update EXP
-                exp_gain = 20  # Example EXP for completing a task
+                exp_gain = int(current_values[2])
                 current_exp = self.user_profile.exp
                 max_exp = self.user_profile.max_exp
                 current_level = self.user_profile.level
 
                 new_exp = current_exp + exp_gain
                 if new_exp >= max_exp:
-                    # Level up
                     current_level += 1
                     new_exp -= max_exp
-                    max_exp += 50  # Increment max EXP for the next level (optional)
+                    max_exp += 50
                     self.level_label.config(text=f"Level: {current_level}")
 
-                # Update user profile and EXP label
                 self.user_profile.exp = new_exp
                 self.user_profile.level = current_level
                 self.user_profile.max_exp = max_exp
                 self.exp_label.config(text=f"EXP: {new_exp}/{max_exp}")
 
     def add_habit(self):
-        new_habit = "New Habit"
-        self.habit_list.insert("", tk.END, values=(new_habit, "Not Completed"))
+        add_habit_window = tk.Toplevel(self.root)
+        add_habit_window.title("Add Habit")
+
+        tk.Label(add_habit_window, text="Habit Name:").pack(pady=5)
+        habit_name_entry = ttk.Entry(add_habit_window)
+        habit_name_entry.pack(pady=5)
+
+        tk.Label(add_habit_window, text="EXP Value:").pack(pady=5)
+        exp_value_entry = ttk.Entry(add_habit_window)
+        exp_value_entry.pack(pady=5)
+
+        def save_habit():
+            habit_name = habit_name_entry.get().strip()
+            try:
+                exp_value = int(exp_value_entry.get().strip())
+            except ValueError:
+                exp_value = 10
+            if habit_name:
+                self.habit_list.insert("", tk.END, values=(habit_name, "Not Completed", exp_value, 0))
+            add_habit_window.destroy()
+
+        save_button = ttk.Button(add_habit_window, text="Save", command=save_habit)
+        save_button.pack(pady=20)
 
     def remove_habit(self):
         selected_item = self.habit_list.selection()
         if selected_item:
             self.habit_list.delete(selected_item)
 
-    def edit_profile(self):
-        # Create a new popup window for editing profile
-        edit_window = tk.Toplevel(self.root)
-        edit_window.title("Edit Profile")
+    def load_data(self):
+        """Load the user profile and habits from a JSON file."""
+        if os.path.exists(self.data_file):
+            with open(self.data_file, "r") as file:
+                data = json.load(file)
 
-        # Entry to update username
-        tk.Label(edit_window, text="Username:").pack(pady=5)
-        username_entry = ttk.Entry(edit_window)
-        username_entry.insert(0, self.user_profile.username)
-        username_entry.pack(pady=5)
+                # Load profile data
+                profile = data.get("profile", {})
+                self.user_profile.username = profile.get("username", "User")
+                self.user_profile.level = profile.get("level", 1)
+                self.user_profile.exp = profile.get("exp", 0)
+                self.user_profile.max_exp = profile.get("max_exp", 100)
 
-        # Button to update avatar
-        def change_avatar():
-            file_path = filedialog.askopenfilename(
-                title="Select Avatar", filetypes=[("Image Files", "*.png;*.jpg;*.jpeg")]
-            )
-            if file_path:
-                self.user_profile.update_avatar(file_path)
-                self.update_avatar_image()
-
-        avatar_button = ttk.Button(edit_window, text="Change Avatar", command=change_avatar)
-        avatar_button.pack(pady=10)
-
-        # Save button
-        def save_profile():
-            new_username = username_entry.get()
-            if new_username.strip():
-                self.user_profile.update_username(new_username)
                 self.username_label.config(text=f"Username: {self.user_profile.username}")
-            edit_window.destroy()
+                self.level_label.config(text=f"Level: {self.user_profile.level}")
+                self.exp_label.config(text=f"EXP: {self.user_profile.exp}/{self.user_profile.max_exp}")
 
-        save_button = ttk.Button(edit_window, text="Save", command=save_profile)
-        save_button.pack(pady=20)
+                # Load habits data
+                self.habit_list.delete(*self.habit_list.get_children())  # Clear existing habits
+                for habit in data.get("habits", []):
+                    self.habit_list.insert(
+                        "", tk.END,
+                        values=(habit["habit"], habit["status"], habit["exp_value"], habit["streak"])
+                    )
 
-    def update_avatar_image(self):
-        # Update avatar image in the UI
-        self.avatar_image = Image.open(self.user_profile.avatar_path)
-        self.avatar_image = self.avatar_image.resize((100, 100))
-        self.avatar_photo = ImageTk.PhotoImage(self.avatar_image)
-        self.avatar_label.config(image=self.avatar_photo)
+    def save_data(self):
+        """Save the user profile and habits to a JSON file."""
+        data = {
+            "profile": {
+                "username": self.user_profile.username,
+                "level": self.user_profile.level,
+                "exp": self.user_profile.exp,
+                "max_exp": self.user_profile.max_exp,
+            },
+            "habits": []
+        }
+
+        for item in self.habit_list.get_children():
+            habit_data = self.habit_list.item(item, "values")
+            data["habits"].append({
+                "habit": habit_data[0],
+                "status": habit_data[1],
+                "exp_value": habit_data[2],
+                "streak": habit_data[3],
+            })
+
+        with open(self.data_file, "w") as file:
+            json.dump(data, file)
+
+    def on_exit(self):
+        """Save data and exit the application."""
+        self.save_data()
+        self.root.destroy()
+
 
 if __name__ == "__main__":
     root = tk.Tk()
