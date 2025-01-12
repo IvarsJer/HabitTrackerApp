@@ -6,6 +6,8 @@ from tkinter import filedialog
 import json
 import os
 from datetime import datetime
+import matplotlib
+import matplotlib.pyplot as plt
 
 
 class HabitTrackerApp:
@@ -92,6 +94,11 @@ class HabitTrackerApp:
         )
         self.remove_habit_button.pack(side=tk.LEFT, padx=5)
 
+        self.analytics_button = ttk.Button(
+            self.button_frame, text="View Analytics", command=self.show_analytics
+        )
+        self.analytics_button.pack(side=tk.LEFT, padx=5)
+
         # Load Data
         self.load_data()
         self.root.protocol("WM_DELETE_WINDOW", self.on_exit)
@@ -125,6 +132,18 @@ class HabitTrackerApp:
                     selected_item,
                     values=(current_values[0], "Completed", current_values[2], new_streak),
                 )
+
+                habit_name = current_values[0]
+                today_date = datetime.now().strftime("%Y-%m-%d")
+
+                # Log completion dates in the data structure
+                for habit in self.habit_data:
+                    if habit["habit"] == habit_name:
+                        if "completion_dates" not in habit:
+                            habit["completion_dates"] = []
+                        habit["completion_dates"].append(today_date)
+
+                self.save_data()
 
                 exp_gain = int(current_values[2])
                 current_exp = self.user_profile.exp
@@ -163,6 +182,9 @@ class HabitTrackerApp:
                 exp_value = 10
             if habit_name:
                 self.habit_list.insert("", tk.END, values=(habit_name, "Not Completed", exp_value, 0))
+                self.habit_data.append(
+                    {"habit": habit_name, "status": "Not Completed", "exp_value": exp_value, "streak": 0,
+                     "completion_dates": []})
             add_habit_window.destroy()
 
         save_button = ttk.Button(add_habit_window, text="Save", command=save_habit)
@@ -171,15 +193,41 @@ class HabitTrackerApp:
     def remove_habit(self):
         selected_item = self.habit_list.selection()
         if selected_item:
+            habit_name = self.habit_list.item(selected_item, "values")[0]
             self.habit_list.delete(selected_item)
+
+            # Remove habit from habit data
+            self.habit_data = [habit for habit in self.habit_data if habit["habit"] != habit_name]
+
+    def show_analytics(self):
+        """Generate analytics for habit completion."""
+        habit_counts = {}
+        for habit in self.habit_data:
+            habit_name = habit["habit"]
+            completion_dates = habit.get("completion_dates", [])
+            habit_counts[habit_name] = len(completion_dates)
+
+        sorted_habits = sorted(habit_counts.items(), key=lambda x: x[1], reverse=True)
+
+        habit_names = [habit[0] for habit in sorted_habits]
+        completion_counts = [habit[1] for habit in sorted_habits]
+
+        plt.figure(figsize=(10, 6))
+        plt.bar(habit_names, completion_counts, color='skyblue')
+        plt.xlabel("Habits")
+        plt.ylabel("Completion Count")
+        plt.title("Habit Completion Analytics")
+        plt.xticks(rotation=45, ha="right")
+        plt.tight_layout()
+        plt.show()
 
     def load_data(self):
         """Load the user profile and habits from a JSON file."""
+        self.habit_data = []
         if os.path.exists(self.data_file):
             with open(self.data_file, "r") as file:
                 data = json.load(file)
 
-                # Load profile data
                 profile = data.get("profile", {})
                 self.user_profile.username = profile.get("username", "User")
                 self.user_profile.level = profile.get("level", 1)
@@ -190,13 +238,13 @@ class HabitTrackerApp:
                 self.level_label.config(text=f"Level: {self.user_profile.level}")
                 self.exp_label.config(text=f"EXP: {self.user_profile.exp}/{self.user_profile.max_exp}")
 
-                # Load habits data
-                self.habit_list.delete(*self.habit_list.get_children())  # Clear existing habits
+                self.habit_list.delete(*self.habit_list.get_children())
                 for habit in data.get("habits", []):
                     self.habit_list.insert(
                         "", tk.END,
                         values=(habit["habit"], habit["status"], habit["exp_value"], habit["streak"])
                     )
+                    self.habit_data.append(habit)
 
     def save_data(self):
         """Save the user profile and habits to a JSON file."""
@@ -207,17 +255,8 @@ class HabitTrackerApp:
                 "exp": self.user_profile.exp,
                 "max_exp": self.user_profile.max_exp,
             },
-            "habits": []
+            "habits": self.habit_data
         }
-
-        for item in self.habit_list.get_children():
-            habit_data = self.habit_list.item(item, "values")
-            data["habits"].append({
-                "habit": habit_data[0],
-                "status": habit_data[1],
-                "exp_value": habit_data[2],
-                "streak": habit_data[3],
-            })
 
         with open(self.data_file, "w") as file:
             json.dump(data, file)
