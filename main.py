@@ -1,13 +1,14 @@
 import tkinter as tk
-from tkinter import ttk
+from tkinter import ttk, messagebox, filedialog
 from PIL import Image, ImageTk
 from user_profile import UserProfile
-from tkinter import filedialog
 import json
 import os
 from datetime import datetime
-import matplotlib
 import matplotlib.pyplot as plt
+import time
+import threading
+
 
 
 class HabitTrackerApp:
@@ -63,16 +64,18 @@ class HabitTrackerApp:
         self.habit_label.pack(anchor="w")
 
         self.habit_list = ttk.Treeview(
-            self.habit_frame, columns=("Habit", "Status", "EXP", "Streak"), show="headings"
+            self.habit_frame, columns=("Habit", "Status", "EXP", "Streak", "Reminder Time"), show="headings"
         )
         self.habit_list.heading("Habit", text="Habit")
         self.habit_list.heading("Status", text="Status")
         self.habit_list.heading("EXP", text="EXP Value")
         self.habit_list.heading("Streak", text="Streak")
+        self.habit_list.heading("Reminder Time", text="Reminder Time")
         self.habit_list.column("Habit", width=200)
         self.habit_list.column("Status", width=150)
         self.habit_list.column("EXP", width=100)
         self.habit_list.column("Streak", width=100)
+        self.habit_list.column("Reminder Time", width=150)
         self.habit_list.pack(fill=tk.BOTH, expand=True)
 
         # Bottom Frame for Buttons
@@ -102,6 +105,9 @@ class HabitTrackerApp:
         # Load Data
         self.load_data()
         self.root.protocol("WM_DELETE_WINDOW", self.on_exit)
+
+        # Start reminder thread
+        threading.Thread(target=self.check_reminders, daemon=True).start()
 
     def edit_profile(self):
         edit_window = tk.Toplevel(self.root)
@@ -174,17 +180,30 @@ class HabitTrackerApp:
         exp_value_entry = ttk.Entry(add_habit_window)
         exp_value_entry.pack(pady=5)
 
+        tk.Label(add_habit_window, text="Reminder Time (HH:MM):").pack(pady=5)
+        reminder_time_entry = ttk.Entry(add_habit_window)
+        reminder_time_entry.pack(pady=5)
+
         def save_habit():
             habit_name = habit_name_entry.get().strip()
             try:
                 exp_value = int(exp_value_entry.get().strip())
             except ValueError:
                 exp_value = 10
+            reminder_time = reminder_time_entry.get().strip()
             if habit_name:
-                self.habit_list.insert("", tk.END, values=(habit_name, "Not Completed", exp_value, 0))
-                self.habit_data.append(
-                    {"habit": habit_name, "status": "Not Completed", "exp_value": exp_value, "streak": 0,
-                     "completion_dates": []})
+                self.habit_list.insert(
+                    "", tk.END,
+                    values=(habit_name, "Not Completed", exp_value, 0, reminder_time)
+                )
+                self.habit_data.append({
+                    "habit": habit_name,
+                    "status": "Not Completed",
+                    "exp_value": exp_value,
+                    "streak": 0,
+                    "completion_dates": [],
+                    "reminder_time": reminder_time,
+                })
             add_habit_window.destroy()
 
         save_button = ttk.Button(add_habit_window, text="Save", command=save_habit)
@@ -207,6 +226,10 @@ class HabitTrackerApp:
             completion_dates = habit.get("completion_dates", [])
             habit_counts[habit_name] = len(completion_dates)
 
+        if not habit_counts:
+            messagebox.showinfo("Analytics", "No data available for analytics yet.")
+            return
+
         sorted_habits = sorted(habit_counts.items(), key=lambda x: x[1], reverse=True)
 
         habit_names = [habit[0] for habit in sorted_habits]
@@ -220,6 +243,18 @@ class HabitTrackerApp:
         plt.xticks(rotation=45, ha="right")
         plt.tight_layout()
         plt.show()
+
+    def check_reminders(self):
+        while True:
+            current_time = datetime.now().strftime("%H:%M")
+            for habit in self.habit_data:
+                reminder_time = habit.get("reminder_time", "")
+                if reminder_time == current_time and habit["status"] == "Not Completed":
+                    self.show_notification(habit["habit"])
+            time.sleep(60)  # Check every minute
+
+    def show_notification(self, habit_name):
+        messagebox.showinfo("Reminder", f"Don't forget to complete your habit: {habit_name}!")
 
     def load_data(self):
         """Load the user profile and habits from a JSON file."""
@@ -265,7 +300,6 @@ class HabitTrackerApp:
         """Save data and exit the application."""
         self.save_data()
         self.root.destroy()
-
 
 if __name__ == "__main__":
     root = tk.Tk()
